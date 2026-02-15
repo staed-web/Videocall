@@ -1,17 +1,19 @@
-// Video Elements
+// Video & UI Elements
 const localVideo = document.getElementById('local-video');
 const remoteVideo = document.getElementById('remote-video');
-
-// Overlay Elements
 const joinOverlay = document.getElementById('join-overlay');
 const myIdDisplay = document.getElementById('my-id');
 const peerIdInput = document.getElementById('peer-id-input');
 const callBtn = document.getElementById('call-btn');
 
-// Control Bar & Actions
+// Controls
 const controlsBar = document.getElementById('controls-bar');
 const hangupBtn = document.getElementById('hangup-btn');
 const chatToggleBtn = document.getElementById('chat-toggle-btn');
+const micBtn = document.getElementById('mic-btn');
+const camBtn = document.getElementById('cam-btn');
+const micIcon = document.getElementById('mic-icon');
+const camIcon = document.getElementById('cam-icon');
 
 // Chat Elements
 const chatSection = document.getElementById('chat-section');
@@ -23,68 +25,81 @@ const sendBtn = document.getElementById('send-btn');
 let localStream;
 let currentCall = null;
 let currentConnection = null;
+let isMicMuted = false;
+let isCamOff = false;
 
-// Initialize PeerJS
+// 1. Initialize PeerJS securely
 const peer = new Peer();
 
 peer.on('open', (id) => {
     myIdDisplay.textContent = id;
 });
 
-// 1. Get Local Camera
+// GLITCH FIX: Handle PeerJS errors so the app doesn't freeze
+peer.on('error', (err) => {
+    console.error(err);
+    alert("Connection Error: " + err.type);
+    callBtn.textContent = "Join Meeting";
+    callBtn.disabled = false;
+});
+
+// 2. Request Camera/Mic cleanly
 navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     .then((stream) => {
         localStream = stream;
         localVideo.srcObject = stream;
     })
     .catch((err) => {
-        console.error('Camera failed', err);
-        alert("Camera and microphone access is required for this app.");
+        alert("Please allow camera and mic permissions in your browser settings.");
     });
 
-// 2. Handle INCOMING Calls
+// 3. Handle Incoming Call
 peer.on('call', (call) => {
     currentCall = call;
     call.answer(localStream);
     
     call.on('stream', (remoteStream) => {
         remoteVideo.srcObject = remoteStream;
-        transitionToInCallUI(true);
+        setupCallUI(true);
     });
+
+    call.on('close', endCall); // Glitch fix: auto-end if they drop
 });
 
-// 3. Handle INCOMING Chat Connections
+// 4. Handle Incoming Chat
 peer.on('connection', (conn) => {
     setupDataConnection(conn);
 });
 
-// 4. Handle OUTGOING Calls
+// 5. Make Outgoing Call
 callBtn.addEventListener('click', () => {
-    const peerIdToCall = peerIdInput.value.trim();
-    if (!peerIdToCall) {
-        // Simple visual shake or alert could go here
-        return alert("Please enter a valid Partner ID.");
-    }
+    const peerId = peerIdInput.value.trim();
+    if (!peerId) return alert("Please paste an ID to join.");
 
     callBtn.textContent = "Connecting...";
+    callBtn.disabled = true; // Prevent double-clicking glitch
 
-    currentCall = peer.call(peerIdToCall, localStream);
+    currentCall = peer.call(peerId, localStream);
+    
     currentCall.on('stream', (remoteStream) => {
         remoteVideo.srcObject = remoteStream;
-        transitionToInCallUI(true);
+        setupCallUI(true);
     });
 
-    const conn = peer.connect(peerIdToCall);
+    currentCall.on('close', endCall);
+
+    const conn = peer.connect(peerId);
     setupDataConnection(conn);
 });
 
-// 5. Chat Connection Logic
+// 6. Data/Chat Connection Logic
 function setupDataConnection(conn) {
     currentConnection = conn;
     
     conn.on('open', () => {
-        enableChat(true);
-        addChatMessage("Meeting securely connected.", 'system');
+        chatInput.disabled = false;
+        sendBtn.disabled = false;
+        addChatMessage("Connected securely.", 'system');
     });
 
     conn.on('data', (data) => {
@@ -92,22 +107,48 @@ function setupDataConnection(conn) {
             endCall();
         } else {
             addChatMessage(data, 'other');
-            // Auto-open chat if it's closed and we get a message
-            chatSection.classList.add('active'); 
+            // Show dot or open chat if hidden
+            if (!chatSection.classList.contains('active')) {
+                chatToggleBtn.style.color = "#60a5fa"; // Notification color
+            }
         }
     });
 
-    conn.on('close', () => endCall());
+    conn.on('close', endCall);
 }
 
-// 6. UI Interaction Logic
+// 7. Media Controls (Mute & Video Off)
+micBtn.addEventListener('click', () => {
+    if (!localStream) return;
+    isMicMuted = !isMicMuted;
+    // Actually disable the audio track
+    localStream.getAudioTracks()[0].enabled = !isMicMuted; 
+    
+    // Update UI
+    micIcon.textContent = isMicMuted ? 'mic_off' : 'mic';
+    micBtn.classList.toggle('muted', isMicMuted);
+});
+
+camBtn.addEventListener('click', () => {
+    if (!localStream) return;
+    isCamOff = !isCamOff;
+    // Actually disable the video track (turns screen black)
+    localStream.getVideoTracks()[0].enabled = !isCamOff;
+    
+    // Update UI
+    camIcon.textContent = isCamOff ? 'videocam_off' : 'videocam';
+    camBtn.classList.toggle('muted', isCamOff);
+});
+
+// 8. Buttons & UI Management
 hangupBtn.addEventListener('click', () => {
     if (currentConnection) currentConnection.send("SIGNAL_HANGUP");
     endCall();
 });
 
 chatToggleBtn.addEventListener('click', () => {
-    chatSection.classList.toggle('active');
+    chatSection.classList.add('active');
+    chatToggleBtn.style.color = "white"; // Reset notification color
 });
 
 closeChatBtn.addEventListener('click', () => {
@@ -124,12 +165,9 @@ function sendMessage() {
 }
 
 sendBtn.addEventListener('click', sendMessage);
-chatInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') sendMessage();
-});
+chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
 
-// --- Helper Functions ---
-
+// 9. Core UI Transitions
 function endCall() {
     if (currentCall) currentCall.close();
     if (currentConnection) currentConnection.close();
@@ -138,41 +176,30 @@ function endCall() {
     currentConnection = null;
     remoteVideo.srcObject = null;
     
-    transitionToInCallUI(false);
-    enableChat(false);
-    callBtn.textContent = "Start Meeting";
-    messagesArea.innerHTML = '<div class="msg system">Meeting ended.</div>';
+    setupCallUI(false);
+    chatInput.disabled = true;
+    sendBtn.disabled = true;
+    callBtn.textContent = "Join Meeting";
+    callBtn.disabled = false;
 }
 
-function transitionToInCallUI(inCall) {
+function setupCallUI(inCall) {
     if (inCall) {
-        // Hide the join menu, show the controls
         joinOverlay.classList.add('hidden');
         controlsBar.classList.add('active');
-        // Make the local video smaller and push it to the corner
-        localVideo.style.width = '200px';
-        localVideo.style.height = '150px';
-        localVideo.style.bottom = '100px';
+        localVideo.classList.remove('fullscreen');
     } else {
-        // Show the join menu, hide the controls
         joinOverlay.classList.remove('hidden');
         controlsBar.classList.remove('active');
-        chatSection.classList.remove('active'); // Close chat panel
-        // Reset local video to look normal in the background
-        localVideo.style.width = '100%';
-        localVideo.style.height = '100%';
-        localVideo.style.bottom = '0';
+        chatSection.classList.remove('active');
+        localVideo.classList.add('fullscreen');
+        messagesArea.innerHTML = '<div class="msg system">Call Ended</div>';
     }
 }
 
-function enableChat(enable) {
-    chatInput.disabled = !enable;
-    sendBtn.disabled = !enable;
-}
-
-function addChatMessage(text, senderType) {
+function addChatMessage(text, type) {
     const msgDiv = document.createElement('div');
-    msgDiv.classList.add('msg', senderType);
+    msgDiv.classList.add('msg', type);
     msgDiv.textContent = text;
     messagesArea.appendChild(msgDiv);
     messagesArea.scrollTop = messagesArea.scrollHeight;
