@@ -3,180 +3,145 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Connect | Premium Video Calling</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,1,0" rel="stylesheet" />
+    <title>ProConnect Video Call</title>
+    
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+
     <style>
+        /* CSS Reset and Variables */
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
         :root {
             --bg-dark: #0f172a;
-            --bg-panel: #1e293b;
+            --surface-dark: #1e293b;
             --primary: #3b82f6;
             --primary-hover: #2563eb;
             --danger: #ef4444;
             --danger-hover: #dc2626;
-            --text-main: #f8fafc;
+            --text-light: #f8fafc;
             --text-muted: #94a3b8;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background-color: var(--bg-dark); color: var(--text-light); height: 100vh; display: flex; overflow: hidden; }
 
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-dark);
-            color: var(--text-main);
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-        }
-
-        /* --- LOBBY UI --- */
-        #lobby-screen {
-            background: var(--bg-panel);
-            padding: 40px;
-            border-radius: 16px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            width: 100%;
-            max-width: 450px;
-            text-align: center;
+        /* Main Layout */
+        .app-container { display: flex; width: 100%; height: 100%; }
+        
+        .video-section { flex-grow: 1; position: relative; display: flex; justify-content: center; align-items: center; background: #000; overflow: hidden; }
+        
+        /* Video Elements */
+        #remote-video { width: 100%; height: 100%; object-fit: cover; }
+        #local-video { 
+            position: absolute; bottom: 100px; right: 24px; width: 200px; height: 150px; 
+            object-fit: cover; border-radius: 12px; border: 2px solid rgba(255,255,255,0.2); 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 10; background: #111; 
             transition: all 0.3s ease;
         }
-        
-        #lobby-screen h1 { font-weight: 600; font-size: 24px; margin-bottom: 20px; }
-        
-        .id-container {
-            background: rgba(0,0,0,0.2);
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 25px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
 
-        .id-container span { font-family: monospace; font-size: 16px; color: var(--primary); letter-spacing: 1px;}
-        
-        .icon-btn {
-            background: transparent; border: none; color: var(--text-muted); cursor: pointer; transition: color 0.2s; display: flex; align-items: center; justify-content: center;
+        /* Pre-Call Overlay (Glassmorphism) */
+        .join-overlay {
+            position: absolute; z-index: 20; background: rgba(30, 41, 59, 0.85);
+            backdrop-filter: blur(12px); padding: 40px; border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);
+            text-align: center; width: 360px;
         }
-        .icon-btn:hover { color: var(--text-main); }
-
-        .input-group { display: flex; gap: 10px; margin-bottom: 20px; }
-        input {
-            flex-grow: 1; padding: 12px 15px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 8px; outline: none; transition: border 0.3s;
-        }
-        input:focus { border-color: var(--primary); }
-        
-        .btn-primary {
-            background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 500; transition: background 0.3s; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
-        }
+        .join-overlay h2 { margin-bottom: 20px; font-weight: 600; font-size: 1.5rem; }
+        .info-box { background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-bottom: 20px; font-family: monospace; font-size: 1.1rem; color: var(--primary); letter-spacing: 1px;}
+        .input-group { display: flex; flex-direction: column; gap: 10px; }
+        input { padding: 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: white; outline: none; font-size: 1rem; transition: 0.2s;}
+        input:focus { border-color: var(--primary); background: rgba(255,255,255,0.1); }
+        .btn-primary { background: var(--primary); color: white; padding: 14px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 1rem; }
         .btn-primary:hover { background: var(--primary-hover); }
 
-        /* --- CALL UI --- */
-        #call-screen {
-            display: none;
-            width: 100%; height: 100%; padding: 20px; gap: 20px;
-        }
-
-        .video-wrapper {
-            flex-grow: 1; position: relative; background: #000; border-radius: 16px; overflow: hidden; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
-
-        #remote-video { width: 100%; height: 100%; object-fit: cover; }
-        
-        #local-video {
-            position: absolute; bottom: 20px; right: 20px; width: 200px; height: 150px; object-fit: cover; border-radius: 12px; border: 2px solid rgba(255,255,255,0.2); box-shadow: 0 10px 20px rgba(0,0,0,0.4); z-index: 10; transform: scaleX(-1); /* Mirror effect */
-        }
-
-        /* Glassmorphism Controls */
+        /* Bottom Controls Bar */
         .controls-bar {
-            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 15px; background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); padding: 12px 24px; border-radius: 100px; border: 1px solid rgba(255,255,255,0.1); z-index: 20;
+            position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 16px; padding: 12px 24px; border-radius: 100px;
+            background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.1); z-index: 15;
+            opacity: 0; pointer-events: none; transition: opacity 0.3s ease;
         }
-
+        .controls-bar.active { opacity: 1; pointer-events: all; }
+        
         .control-btn {
-            width: 50px; height: 50px; border-radius: 50%; border: none; background: rgba(255,255,255,0.1); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+            width: 50px; height: 50px; border-radius: 50%; border: none;
+            background: rgba(255,255,255,0.1); color: white; cursor: pointer;
+            display: flex; justify-content: center; align-items: center;
+            transition: all 0.2s ease;
         }
         .control-btn:hover { background: rgba(255,255,255,0.2); transform: translateY(-2px); }
-        .control-btn.danger { background: var(--danger); color: white; }
+        .control-btn.danger { background: var(--danger); }
         .control-btn.danger:hover { background: var(--danger-hover); }
+        .control-btn .material-symbols-outlined { font-size: 24px; }
 
-        /* --- CHAT SIDEBAR --- */
-        .chat-sidebar {
-            width: 350px; background: var(--bg-panel); border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; transition: margin 0.3s ease;
+        /* Chat Side Panel */
+        .chat-section {
+            width: 350px; background: var(--surface-dark); border-left: 1px solid rgba(255,255,255,0.05);
+            display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.3s ease;
+            position: absolute; right: 0; top: 0; height: 100%; z-index: 30;
         }
-        .chat-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); font-weight: 500; display: flex; justify-content: space-between; align-items: center; }
-        .messages-container { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+        .chat-section.active { transform: translateX(0); position: relative; }
+        .chat-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); font-weight: 600; display: flex; justify-content: space-between; align-items: center;}
+        .close-chat { cursor: pointer; color: var(--text-muted); transition: 0.2s; }
+        .close-chat:hover { color: white; }
+        .messages { flex-grow: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
         
-        .msg { padding: 12px 16px; border-radius: 12px; max-width: 85%; font-size: 14px; line-height: 1.4; word-wrap: break-word; }
-        .msg.self { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
-        .msg.other { background: rgba(255,255,255,0.1); color: white; align-self: flex-start; border-bottom-left-radius: 4px; }
-        .msg.system { background: transparent; color: var(--text-muted); align-self: center; font-size: 12px; text-align: center; }
+        .msg { padding: 12px 16px; border-radius: 12px; max-width: 85%; font-size: 0.9rem; line-height: 1.4; }
+        .msg.self { background: var(--primary); align-self: flex-end; border-bottom-right-radius: 4px; }
+        .msg.other { background: rgba(255,255,255,0.1); align-self: flex-start; border-bottom-left-radius: 4px; }
+        .msg.system { background: transparent; color: var(--text-muted); align-self: center; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        .chat-input-area { padding: 20px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; gap: 10px; background: var(--surface-dark); }
+        .chat-input-area input { flex-grow: 1; padding: 12px 16px; border-radius: 100px; margin: 0; }
+        .chat-input-area .send-btn { background: var(--primary); color: white; border: none; width: 45px; height: 45px; border-radius: 50%; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: 0.2s; }
+        .chat-input-area .send-btn:hover { background: var(--primary-hover); }
 
-        .chat-input-wrapper { padding: 15px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; gap: 10px; }
-        .chat-input-wrapper input { padding: 10px 15px; border-radius: 20px; }
-        .send-btn { background: var(--primary); border: none; color: white; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
-        .send-btn:hover { background: var(--primary-hover); }
-        
+        /* Utility */
         .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
-    <div id="lobby-screen">
-        <h1>Connect</h1>
-        <p style="color: var(--text-muted); margin-bottom: 10px; font-size: 14px;">Your Meeting ID</p>
-        <div class="id-container">
-            <span id="my-id">Generating...</span>
-            <button class="icon-btn" id="copy-btn" title="Copy ID">
-                <span class="material-symbols-outlined">content_copy</span>
-            </button>
-        </div>
+    <div class="app-container">
         
-        <div class="input-group">
-            <input type="text" id="peer-id-input" placeholder="Enter remote ID to join...">
-        </div>
-        <button class="btn-primary" id="call-btn">
-            <span class="material-symbols-outlined">video_call</span> Join Call
-        </button>
-    </div>
-
-    <div id="call-screen">
-        
-        <div class="video-wrapper">
+        <div class="video-section">
             <video id="remote-video" autoplay playsinline></video>
             <video id="local-video" autoplay muted playsinline></video>
-            
-            <div class="controls-bar">
-                <button class="control-btn" id="mic-btn" title="Toggle Microphone">
-                    <span class="material-symbols-outlined" id="mic-icon">mic</span>
-                </button>
-                <button class="control-btn" id="video-btn" title="Toggle Camera">
-                    <span class="material-symbols-outlined" id="video-icon">videocam</span>
-                </button>
+
+            <div class="join-overlay" id="join-overlay">
+                <h2>ProConnect</h2>
+                <p style="color: var(--text-muted); margin-bottom: 10px; font-size: 0.9rem;">Your Meeting ID</p>
+                <div class="info-box" id="my-id">Generating...</div>
+                
+                <div class="input-group">
+                    <input type="text" id="peer-id-input" placeholder="Enter Partner's ID">
+                    <button class="btn-primary" id="call-btn">Start Meeting</button>
+                </div>
+            </div>
+
+            <div class="controls-bar" id="controls-bar">
                 <button class="control-btn" id="chat-toggle-btn" title="Toggle Chat">
                     <span class="material-symbols-outlined">chat</span>
                 </button>
-                <button class="control-btn danger" id="hangup-btn" title="Leave Call">
+                <button class="control-btn danger" id="hangup-btn" title="Leave Meeting">
                     <span class="material-symbols-outlined">call_end</span>
                 </button>
             </div>
         </div>
 
-        <div class="chat-sidebar" id="chat-sidebar">
+        <div class="chat-section" id="chat-section">
             <div class="chat-header">
-                Meeting Chat
-                <span class="material-symbols-outlined" style="color: var(--text-muted); cursor: pointer;" id="close-chat-btn">close</span>
+                <span>Meeting Chat</span>
+                <span class="material-symbols-outlined close-chat" id="close-chat-btn">close</span>
             </div>
-            <div class="messages-container" id="messages-area">
-                <div class="msg system">End-to-end encrypted chat started.</div>
+            <div class="messages" id="messages-area">
+                <div class="msg system">Waiting for connection...</div>
             </div>
-            <div class="chat-input-wrapper">
-                <input type="text" id="chat-input" placeholder="Send a message...">
-                <button class="send-btn" id="send-btn">
-                    <span class="material-symbols-outlined" style="font-size: 18px;">send</span>
+            <div class="chat-input-area">
+                <input type="text" id="chat-input" placeholder="Type a message..." disabled>
+                <button class="send-btn" id="send-btn" disabled>
+                    <span class="material-symbols-outlined">send</span>
                 </button>
             </div>
         </div>
