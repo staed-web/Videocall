@@ -1,138 +1,119 @@
-// --- DOM Elements ---
-const lobbyScreen = document.getElementById('lobby-screen');
-const callScreen = document.getElementById('call-screen');
-const myIdDisplay = document.getElementById('my-id');
-const copyBtn = document.getElementById('copy-btn');
-const peerIdInput = document.getElementById('peer-id-input');
-const callBtn = document.getElementById('call-btn');
-
+// Video Elements
 const localVideo = document.getElementById('local-video');
 const remoteVideo = document.getElementById('remote-video');
 
-const micBtn = document.getElementById('mic-btn');
-const micIcon = document.getElementById('mic-icon');
-const videoBtn = document.getElementById('video-btn');
-const videoIcon = document.getElementById('video-icon');
+// Overlay Elements
+const joinOverlay = document.getElementById('join-overlay');
+const myIdDisplay = document.getElementById('my-id');
+const peerIdInput = document.getElementById('peer-id-input');
+const callBtn = document.getElementById('call-btn');
+
+// Control Bar & Actions
+const controlsBar = document.getElementById('controls-bar');
 const hangupBtn = document.getElementById('hangup-btn');
 const chatToggleBtn = document.getElementById('chat-toggle-btn');
-const closeChatBtn = document.getElementById('close-chat-btn');
-const chatSidebar = document.getElementById('chat-sidebar');
 
+// Chat Elements
+const chatSection = document.getElementById('chat-section');
+const closeChatBtn = document.getElementById('close-chat-btn');
 const messagesArea = document.getElementById('messages-area');
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
 
-// --- State Variables ---
 let localStream;
 let currentCall = null;
 let currentConnection = null;
-let isAudioEnabled = true;
-let isVideoEnabled = true;
 
-// --- Initialize PeerJS ---
+// Initialize PeerJS
 const peer = new Peer();
 
 peer.on('open', (id) => {
     myIdDisplay.textContent = id;
 });
 
-// Copy ID to clipboard
-copyBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(myIdDisplay.textContent);
-    copyBtn.innerHTML = '<span class="material-symbols-outlined" style="color: #4ade80;">check</span>';
-    setTimeout(() => {
-        copyBtn.innerHTML = '<span class="material-symbols-outlined">content_copy</span>';
-    }, 2000);
-});
-
-// --- Get Local Media ---
+// 1. Get Local Camera
 navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     .then((stream) => {
         localStream = stream;
         localVideo.srcObject = stream;
     })
     .catch((err) => {
-        console.error('Failed to get local stream', err);
-        alert("Please allow camera and microphone permissions to use this app.");
+        console.error('Camera failed', err);
+        alert("Camera and microphone access is required for this app.");
     });
 
-// --- Incoming Calls ---
+// 2. Handle INCOMING Calls
 peer.on('call', (call) => {
     currentCall = call;
     call.answer(localStream);
     
     call.on('stream', (remoteStream) => {
         remoteVideo.srcObject = remoteStream;
-        switchToCallScreen();
+        transitionToInCallUI(true);
     });
 });
 
+// 3. Handle INCOMING Chat Connections
 peer.on('connection', (conn) => {
     setupDataConnection(conn);
 });
 
-// --- Outgoing Calls ---
+// 4. Handle OUTGOING Calls
 callBtn.addEventListener('click', () => {
     const peerIdToCall = peerIdInput.value.trim();
-    if (!peerIdToCall) return alert("Please enter a valid Meeting ID.");
+    if (!peerIdToCall) {
+        // Simple visual shake or alert could go here
+        return alert("Please enter a valid Partner ID.");
+    }
 
-    // Start Call
+    callBtn.textContent = "Connecting...";
+
     currentCall = peer.call(peerIdToCall, localStream);
     currentCall.on('stream', (remoteStream) => {
         remoteVideo.srcObject = remoteStream;
-        switchToCallScreen();
+        transitionToInCallUI(true);
     });
 
-    // Start Chat
     const conn = peer.connect(peerIdToCall);
     setupDataConnection(conn);
 });
 
-// --- Chat Connection Logic ---
+// 5. Chat Connection Logic
 function setupDataConnection(conn) {
     currentConnection = conn;
     
     conn.on('open', () => {
-        addChatMessage("User joined the meeting.", 'system');
+        enableChat(true);
+        addChatMessage("Meeting securely connected.", 'system');
     });
 
     conn.on('data', (data) => {
         if (data === "SIGNAL_HANGUP") {
-            leaveCall();
+            endCall();
         } else {
             addChatMessage(data, 'other');
+            // Auto-open chat if it's closed and we get a message
+            chatSection.classList.add('active'); 
         }
     });
 
-    conn.on('close', () => {
-        leaveCall();
-    });
+    conn.on('close', () => endCall());
 }
 
-// --- Media Controls (Mute/Video Off) ---
-micBtn.addEventListener('click', () => {
-    isAudioEnabled = !isAudioEnabled;
-    localStream.getAudioTracks()[0].enabled = isAudioEnabled;
-    micIcon.textContent = isAudioEnabled ? 'mic' : 'mic_off';
-    micBtn.classList.toggle('danger', !isAudioEnabled);
+// 6. UI Interaction Logic
+hangupBtn.addEventListener('click', () => {
+    if (currentConnection) currentConnection.send("SIGNAL_HANGUP");
+    endCall();
 });
 
-videoBtn.addEventListener('click', () => {
-    isVideoEnabled = !isVideoEnabled;
-    localStream.getVideoTracks()[0].enabled = isVideoEnabled;
-    videoIcon.textContent = isVideoEnabled ? 'videocam' : 'videocam_off';
-    videoBtn.classList.toggle('danger', !isVideoEnabled);
-});
-
-// --- Chat UI Toggles ---
 chatToggleBtn.addEventListener('click', () => {
-    chatSidebar.classList.toggle('hidden');
-});
-closeChatBtn.addEventListener('click', () => {
-    chatSidebar.classList.add('hidden');
+    chatSection.classList.toggle('active');
 });
 
-// --- Sending Messages ---
+closeChatBtn.addEventListener('click', () => {
+    chatSection.classList.remove('active');
+});
+
 function sendMessage() {
     const text = chatInput.value.trim();
     if (text && currentConnection && currentConnection.open) {
@@ -147,39 +128,52 @@ chatInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
 });
 
-function addChatMessage(text, senderType) {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `msg ${senderType}`;
-    msgDiv.textContent = text;
-    messagesArea.appendChild(msgDiv);
-    messagesArea.scrollTop = messagesArea.scrollHeight;
-}
+// --- Helper Functions ---
 
-// --- Hangup Logic & Screen Management ---
-hangupBtn.addEventListener('click', () => {
-    if (currentConnection) currentConnection.send("SIGNAL_HANGUP");
-    leaveCall();
-});
-
-function leaveCall() {
+function endCall() {
     if (currentCall) currentCall.close();
     if (currentConnection) currentConnection.close();
     
     currentCall = null;
     currentConnection = null;
     remoteVideo.srcObject = null;
-    messagesArea.innerHTML = '<div class="msg system">End-to-end encrypted chat started.</div>'; // Reset chat
     
-    switchToLobbyScreen();
+    transitionToInCallUI(false);
+    enableChat(false);
+    callBtn.textContent = "Start Meeting";
+    messagesArea.innerHTML = '<div class="msg system">Meeting ended.</div>';
 }
 
-function switchToCallScreen() {
-    lobbyScreen.style.display = 'none';
-    callScreen.style.display = 'flex';
+function transitionToInCallUI(inCall) {
+    if (inCall) {
+        // Hide the join menu, show the controls
+        joinOverlay.classList.add('hidden');
+        controlsBar.classList.add('active');
+        // Make the local video smaller and push it to the corner
+        localVideo.style.width = '200px';
+        localVideo.style.height = '150px';
+        localVideo.style.bottom = '100px';
+    } else {
+        // Show the join menu, hide the controls
+        joinOverlay.classList.remove('hidden');
+        controlsBar.classList.remove('active');
+        chatSection.classList.remove('active'); // Close chat panel
+        // Reset local video to look normal in the background
+        localVideo.style.width = '100%';
+        localVideo.style.height = '100%';
+        localVideo.style.bottom = '0';
+    }
 }
 
-function switchToLobbyScreen() {
-    callScreen.style.display = 'none';
-    lobbyScreen.style.display = 'block';
-    peerIdInput.value = '';
+function enableChat(enable) {
+    chatInput.disabled = !enable;
+    sendBtn.disabled = !enable;
+}
+
+function addChatMessage(text, senderType) {
+    const msgDiv = document.createElement('div');
+    msgDiv.classList.add('msg', senderType);
+    msgDiv.textContent = text;
+    messagesArea.appendChild(msgDiv);
+    messagesArea.scrollTop = messagesArea.scrollHeight;
 }
