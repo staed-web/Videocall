@@ -1,28 +1,51 @@
-// HTML Elements
-const localVideo = document.getElementById('local-video');
-const remoteVideo = document.getElementById('remote-video');
+// --- DOM Elements ---
+const lobbyScreen = document.getElementById('lobby-screen');
+const callScreen = document.getElementById('call-screen');
 const myIdDisplay = document.getElementById('my-id');
+const copyBtn = document.getElementById('copy-btn');
 const peerIdInput = document.getElementById('peer-id-input');
 const callBtn = document.getElementById('call-btn');
-const hangupBtn = document.getElementById('hangup-btn');
 
-// Chat Elements
+const localVideo = document.getElementById('local-video');
+const remoteVideo = document.getElementById('remote-video');
+
+const micBtn = document.getElementById('mic-btn');
+const micIcon = document.getElementById('mic-icon');
+const videoBtn = document.getElementById('video-btn');
+const videoIcon = document.getElementById('video-icon');
+const hangupBtn = document.getElementById('hangup-btn');
+const chatToggleBtn = document.getElementById('chat-toggle-btn');
+const closeChatBtn = document.getElementById('close-chat-btn');
+const chatSidebar = document.getElementById('chat-sidebar');
+
 const messagesArea = document.getElementById('messages-area');
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
 
+// --- State Variables ---
 let localStream;
 let currentCall = null;
 let currentConnection = null;
+let isAudioEnabled = true;
+let isVideoEnabled = true;
 
-// Initialize PeerJS
+// --- Initialize PeerJS ---
 const peer = new Peer();
 
 peer.on('open', (id) => {
     myIdDisplay.textContent = id;
 });
 
-// 1. Get Local Camera
+// Copy ID to clipboard
+copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(myIdDisplay.textContent);
+    copyBtn.innerHTML = '<span class="material-symbols-outlined" style="color: #4ade80;">check</span>';
+    setTimeout(() => {
+        copyBtn.innerHTML = '<span class="material-symbols-outlined">content_copy</span>';
+    }, 2000);
+});
+
+// --- Get Local Media ---
 navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     .then((stream) => {
         localStream = stream;
@@ -30,81 +53,92 @@ navigator.mediaDevices.getUserMedia({ video: true, audio: true })
     })
     .catch((err) => {
         console.error('Failed to get local stream', err);
-        alert("Please allow camera and microphone permissions.");
+        alert("Please allow camera and microphone permissions to use this app.");
     });
 
-// 2. Handle INCOMING Calls (Video)
+// --- Incoming Calls ---
 peer.on('call', (call) => {
     currentCall = call;
-    call.answer(localStream); // Answer automatically
+    call.answer(localStream);
     
     call.on('stream', (remoteStream) => {
         remoteVideo.srcObject = remoteStream;
-        updateUIForCall(true);
+        switchToCallScreen();
     });
 });
 
-// 3. Handle INCOMING Data Connections (Chat)
 peer.on('connection', (conn) => {
     setupDataConnection(conn);
 });
 
-// 4. Handle OUTGOING Calls
+// --- Outgoing Calls ---
 callBtn.addEventListener('click', () => {
     const peerIdToCall = peerIdInput.value.trim();
-    if (!peerIdToCall) return alert("Enter a valid ID.");
+    if (!peerIdToCall) return alert("Please enter a valid Meeting ID.");
 
-    // Start video call
+    // Start Call
     currentCall = peer.call(peerIdToCall, localStream);
     currentCall.on('stream', (remoteStream) => {
         remoteVideo.srcObject = remoteStream;
-        updateUIForCall(true);
+        switchToCallScreen();
     });
 
-    // Start data connection (Chat)
+    // Start Chat
     const conn = peer.connect(peerIdToCall);
     setupDataConnection(conn);
 });
 
-// 5. Setup Chat Connection Logic
+// --- Chat Connection Logic ---
 function setupDataConnection(conn) {
     currentConnection = conn;
     
     conn.on('open', () => {
-        enableChat(true);
-        addChatMessage("Connected! You can now chat.", 'system');
+        addChatMessage("User joined the meeting.", 'system');
     });
 
     conn.on('data', (data) => {
-        // If we receive the secret hangup command, end the call on this side
         if (data === "SIGNAL_HANGUP") {
-            endCall();
+            leaveCall();
         } else {
             addChatMessage(data, 'other');
         }
     });
 
     conn.on('close', () => {
-        endCall();
+        leaveCall();
     });
 }
 
-// 6. Hang Up Button Logic
-hangupBtn.addEventListener('click', () => {
-    // Tell the other person we are hanging up
-    if (currentConnection) {
-        currentConnection.send("SIGNAL_HANGUP");
-    }
-    endCall();
+// --- Media Controls (Mute/Video Off) ---
+micBtn.addEventListener('click', () => {
+    isAudioEnabled = !isAudioEnabled;
+    localStream.getAudioTracks()[0].enabled = isAudioEnabled;
+    micIcon.textContent = isAudioEnabled ? 'mic' : 'mic_off';
+    micBtn.classList.toggle('danger', !isAudioEnabled);
 });
 
-// 7. Send Chat Message Logic
+videoBtn.addEventListener('click', () => {
+    isVideoEnabled = !isVideoEnabled;
+    localStream.getVideoTracks()[0].enabled = isVideoEnabled;
+    videoIcon.textContent = isVideoEnabled ? 'videocam' : 'videocam_off';
+    videoBtn.classList.toggle('danger', !isVideoEnabled);
+});
+
+// --- Chat UI Toggles ---
+chatToggleBtn.addEventListener('click', () => {
+    chatSidebar.classList.toggle('hidden');
+});
+closeChatBtn.addEventListener('click', () => {
+    chatSidebar.classList.add('hidden');
+});
+
+// --- Sending Messages ---
 function sendMessage() {
     const text = chatInput.value.trim();
     if (text && currentConnection && currentConnection.open) {
-        currentConnection.send(text); // Send to peer
-        addChatMessage(text, 'self'); // Show on our screen
-        chatInput.value = ''; // Clear input
+        currentConnection.send(text);
+        addChatMessage(text, 'self');
+        chatInput.value = '';
     }
 }
 
@@ -113,44 +147,39 @@ chatInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
 });
 
-// --- Helper Functions ---
+function addChatMessage(text, senderType) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `msg ${senderType}`;
+    msgDiv.textContent = text;
+    messagesArea.appendChild(msgDiv);
+    messagesArea.scrollTop = messagesArea.scrollHeight;
+}
 
-function endCall() {
+// --- Hangup Logic & Screen Management ---
+hangupBtn.addEventListener('click', () => {
+    if (currentConnection) currentConnection.send("SIGNAL_HANGUP");
+    leaveCall();
+});
+
+function leaveCall() {
     if (currentCall) currentCall.close();
     if (currentConnection) currentConnection.close();
     
     currentCall = null;
     currentConnection = null;
-    remoteVideo.srcObject = null; // Clear their video
+    remoteVideo.srcObject = null;
+    messagesArea.innerHTML = '<div class="msg system">End-to-end encrypted chat started.</div>'; // Reset chat
     
-    updateUIForCall(false);
-    enableChat(false);
-    addChatMessage("Call ended.", 'system');
+    switchToLobbyScreen();
 }
 
-function updateUIForCall(inCall) {
-    if (inCall) {
-        callBtn.style.display = 'none';
-        hangupBtn.style.display = 'inline-block';
-        peerIdInput.style.display = 'none';
-    } else {
-        callBtn.style.display = 'inline-block';
-        hangupBtn.style.display = 'none';
-        peerIdInput.style.display = 'inline-block';
-        peerIdInput.value = '';
-    }
+function switchToCallScreen() {
+    lobbyScreen.style.display = 'none';
+    callScreen.style.display = 'flex';
 }
 
-function enableChat(enable) {
-    chatInput.disabled = !enable;
-    sendBtn.disabled = !enable;
-}
-
-function addChatMessage(text, senderType) {
-    const msgDiv = document.createElement('div');
-    msgDiv.classList.add('msg', senderType);
-    msgDiv.textContent = text;
-    messagesArea.appendChild(msgDiv);
-    // Auto-scroll to bottom
-    messagesArea.scrollTop = messagesArea.scrollHeight;
+function switchToLobbyScreen() {
+    callScreen.style.display = 'none';
+    lobbyScreen.style.display = 'block';
+    peerIdInput.value = '';
 }
